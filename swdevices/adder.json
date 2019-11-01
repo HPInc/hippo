@@ -1,0 +1,104 @@
+
+{ "copyright" : ["Copyright 2019 HP Development Company, L.P.",
+                 "SPDX-License-Identifier: MIT"],
+  "device_name" : "Adder",
+  "api" : [{
+    "doc" : ["function that adds two points",
+             "p1 and p2 are two input parameters",
+             "pr is an oputput parameter"],
+    "method" : "add_point",
+    "params" : [{
+      "name" : "p1",
+      "type" : "PointX"
+    }, {
+      "name" : "p2",
+      "type" : "PointX"
+    }],
+    "result" : [{
+      "name" : "pr",
+      "type" : "PointX"
+    }],
+    "timeout" : 1
+  }, {
+    "doc" : ["function that copies keystone parameters"],
+    "method" : "keystone",
+    "params" : [{
+      "name" : "k",
+      "type" : "CameraKeystoneX"
+    }],
+    "result" : [{
+      "name" : "kr",
+      "type" : "CameraKeystoneX"
+    }],
+    "timeout" : 1
+  }, {
+    "doc" : ["function returns sw device version"],
+    "method" : "version",
+    "params" : [
+    ],
+    "result" : [{
+      "name" : "v",
+      "type" : "string"
+    }],
+    "timeout" : 1
+  }, {
+    "doc" : ["will disconnect the sw device"],
+    "method" : "disconnect_device",
+    "params" : [
+    ],
+    "result" : [
+    ],
+    "timeout" : 1
+  }, {
+    "doc" : ["function using binary data"],
+    "method" : "binary_data",
+    "params" : [{
+      "name" : "b1",
+      "type" : "b64bytes"
+    }, {
+      "name" : "b2",
+      "type" : "b64bytes"
+    }               ],
+    "result" : [{
+      "name" : "br1",
+      "type" : "b64bytes"
+    }],
+    "timeout" : 10
+  },{
+    "doc" : ["function that will return an error",
+             "please note that does not have any parameter nor returns any value"],
+    "method" : "return_error",
+    "params" : [
+    ],
+    "result" : [
+    ],
+    "timeout" : 2
+  },{
+    "doc" : ["slow function call to test timeouts"],
+    "method" : "slow_call",
+    "params" : [{
+      "name" : "f1",
+      "type" : "integer"
+    }],
+    "result" : [{
+      "name" : "f2",
+      "type" : "integer"
+    }],
+    "timeout" : 30
+  }, {
+    "doc" : ["function to test b64 and arrays inside schemas to test leaks"],
+    "method" : "hidden_array",
+    "params" : [{
+      "name" : "data_b64",
+      "type" : "DataWithB64Bytes"
+    }, {
+      "name" : "data_wcharptr",
+      "type" : "DataWithWcharptr"
+    }               ],
+    "result" : [{
+      "name" : "ret",
+      "type" : "DataWithB64Bytes"
+    }],
+    "timeout" : 1
+  }]
+}

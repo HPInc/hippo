@@ -1,0 +1,16 @@
+{ "$schema": "http://json-schema.org/draft-06/schema#",
+  "$id": "DataWithWcharptr.schema.json",
+  "title": "DataWithWcharptr",
+  "description": "DataWithWcharptr json schema",
+  "type": "object",
+  "properties": {
+	  "counter": {
+		  "description": "Number of items",
+		  "type": "integer"
+	  },
+	  "hidden_wcharptr": {
+		  "description": "wcharptr parameter",
+		  "type": "string"
+	  }
+  }
+}

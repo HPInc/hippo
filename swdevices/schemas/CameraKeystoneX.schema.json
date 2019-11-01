@@ -1,0 +1,17 @@
+
+{ "$schema": "http://json-schema.org/draft-06/schema#",
+  "$id": "CameraKeystoneX.schema.json",
+  "title": "CameraKeystone",
+  "description": "CameraKeystone json schema",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "description": "Indicates if this keystone value is enabled or disabled.",
+      "type": "boolean"
+    },
+    "value": {
+      "description": "CameraQuadrilateral",
+      "$ref": "CameraQuadrilateralX.schema.json"
+    }
+  }
+}

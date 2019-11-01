@@ -1,0 +1,25 @@
+
+{ "$schema": "http://json-schema.org/draft-06/schema#",
+  "$id": "DeviceConnected.schema.json",
+  "title": "DeviceConnected",
+  "description": "device_connected json schema",
+  "type": "object",
+  "required" : ["copyright", "device_name", "api"],
+  "properties": {
+    "copyright": {
+      "description": "Generated code copyright",
+      "type": "array"
+    },
+    "device_name": {
+      "description": "Name of the sw device",
+      "type": "string"
+    },
+    "api": {
+      "description": "DeviceConnectedApi",
+      "type": "array",
+      "items" : {
+        "$ref": "DeviceConnectedApi.schema.json"
+      }
+    }
+  }
+}

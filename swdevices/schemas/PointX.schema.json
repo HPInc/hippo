@@ -1,0 +1,18 @@
+
+{ "$schema": "http://json-schema.org/draft-06/schema#",
+  "$id": "PointX.schema.json",
+  "title": "Point type",
+  "description": "Point json schema",
+  "type": "object",
+  "required": [ "x", "y" ],
+  "properties": {
+    "x": {
+      "description": "X coordinate of the point",
+      "type": "integer"
+    },
+    "y": {
+      "description": "Y coordinate of the point",
+      "type": "integer"
+    }
+  }
+}

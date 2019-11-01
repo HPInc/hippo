@@ -1,0 +1,16 @@
+{ "$schema": "http://json-schema.org/draft-06/schema#",
+  "$id": "DataWithB64Bytes.schema.json",
+  "title": "DataWithB64Bytes",
+  "description": "DataWithB64Bytes json schema",
+  "type": "object",
+  "properties": {
+	  "counter": {
+		  "description": "Number of items",
+		  "type": "integer"
+	  },
+	  "hidden_b64bytes": {
+		  "description": "b64bytes parameter",
+		  "type": "b64bytes"
+	  }
+  }
+}

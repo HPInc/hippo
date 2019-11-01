@@ -1,0 +1,36 @@
+
+{ "$schema": "http://json-schema.org/draft-06/schema#",
+  "$id": "DeviceConnectedApi.schema.json",
+  "title": "DeviceConnectedApi",
+  "description": "device_connected json schema API",
+  "type": "object",
+  "required" : ["method", "params", "result", "timeout"],
+  "properties": {
+    "doc": {
+      "description": "DeviceConnectedApi method documentation",
+      "type": "array"
+    },
+    "method": {
+      "description": "DeviceConnectedApi method name",
+      "type": "string"
+    },
+    "params": {
+      "description": "DeviceConnectedApiParam",
+      "type": "array",
+      "items" : {
+        "$ref": "DeviceConnectedApiParam.schema.json"
+      }
+    },
+    "result": {
+      "description": "DeviceConnectedApiResult",
+      "type": "array",
+      "items" : {
+        "$ref": "DeviceConnectedApiParam.schema.json"
+      }
+    },
+    "timeout": {
+      "description": "method timeout in seconds",
+      "type": "integer"
+    }
+  }
+}

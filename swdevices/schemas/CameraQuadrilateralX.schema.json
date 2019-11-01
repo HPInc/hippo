@@ -1,0 +1,25 @@
+
+{ "$schema": "http://json-schema.org/draft-06/schema#",
+  "$id": "CameraQuadrilateralX.schema.json",
+  "title": "sw_device",
+  "description": "CameraQuadrilateral json schema",
+  "type": "object",
+  "properties": {
+    "top_left": {
+      "description": "Top left corner of quadrilateral",
+      "$ref": "PointX.schema.json"
+    },
+    "top_right": {
+      "description": "Top right corner of quadrilateral",
+      "$ref": "PointX.schema.json"
+    },
+    "bottom_left": {
+      "description": "Bottom left corner of quadrilateral",
+      "$ref": "PointX.schema.json"
+    },
+    "bottom_right": {
+      "description": "Bottom right corner of quadrilateral",
+      "$ref": "PointX.schema.json"
+    }
+  }
+}
