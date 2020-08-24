@@ -100,6 +100,15 @@ class BlackAdder : public hippo::Adder {
     return 0LL;
   }
 
+  uint64_t infinite_timeout_cb() override {
+	  for (int i = 17; i > 0; i--) {
+		  fprintf(stderr, "%s will return in %d seconds\n", __FUNCTION__, i);
+		  Sleep(1000);
+	  }
+	  fprintf(stderr, "%s Finished\n", __FUNCTION__);
+	  return 0LL;
+  }
+
   // will disconnect the sw device
   uint64_t disconnect_device_cb() {
     fprintf(stderr, "%s\n", __FUNCTION__);
@@ -256,6 +265,10 @@ uint64_t TestSWDevice(void) {
   int32_t i, j;
   if (err = adder.slow_call(i, &j)) {
     print_error(err);
+  }
+
+  if (err = adder.infinite_timeout()) {
+	  print_error(err);
   }
 
   hippo::DataWithB64Bytes h1, hr1;

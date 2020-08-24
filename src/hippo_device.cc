@@ -438,7 +438,7 @@ uint64_t HippoDevice::SendRawMsg(const char *method, const void *param,
 }
 
 uint64_t HippoDevice::SendRawMsg(const char *method, const void *param,
-                                 int timeout, void *ret_obj) {
+                                 unsigned int timeout, void *ret_obj) {
   uint64_t err = 0LL;
 
   std::lock_guard<std::mutex> lock(gHippoDeviceMutex);      // lock the mutex

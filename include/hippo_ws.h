@@ -29,17 +29,17 @@ class DLLEXPORT HippoWS {
   ~HippoWS(void);
 
   uint64_t Connect(const char *host, uint32_t port, WsConnectionType type,
-                   int timeout);
+                   unsigned int timeout);
   uint64_t Connect(const char *host, uint32_t port, WsConnectionType type,
-                   uint32_t rx_buffer_size, int timeout);
+                   uint32_t rx_buffer_size, unsigned int timeout);
   uint64_t Disconnect();
   bool Connected();
 
   uint64_t SendRequest(const unsigned char *request, WsConnectionType type);
   uint64_t SendRequest(const unsigned char *request, WsConnectionType type,
-                       int timeout, unsigned char **response);
+                       unsigned int timeout, unsigned char **response);
   uint64_t SendRequest(const unsigned char *request, size_t req_len,
-                       WsConnectionType type, int timeout,
+                       WsConnectionType type, unsigned int timeout,
                        unsigned char **response, size_t *res_len);
 
   uint64_t StopSignalLoop();

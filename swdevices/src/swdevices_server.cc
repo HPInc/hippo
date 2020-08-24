@@ -69,6 +69,15 @@ class BlackAdder : public hippo::Adder {
     return 0LL;
   }
 
+  uint64_t infinite_timeout_cb() override {
+	  for (int i = 17; i > 0; i--) {
+		  fprintf(stderr, "%s will return in %d seconds\n", __FUNCTION__, i);
+		  Sleep(1000);
+	  }
+	  fprintf(stderr, "%s Finished\n", __FUNCTION__);
+	  return 0LL;
+  }
+
   uint64_t hidden_array_cb(const hippo::DataWithB64Bytes &data_b64,
                            const hippo::DataWithWcharptr &data_wcharptr,
                            hippo::DataWithB64Bytes *ret) override {

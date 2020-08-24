@@ -30,6 +30,9 @@ uint64_t base64_encode(const b64bytes &bytes, char **get) {
   size_t len = bytes.len;
   size_t encoded_len = (len + 2) / 3 * 4;
   *get = reinterpret_cast<char*>(malloc(encoded_len+1));
+  if (*get == NULL) {
+    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_MEM_ALLOC);
+  }
   unsigned char *p = (unsigned char*)bytes.data, *str = (unsigned char*)*get;
   (void)memset(str, '=', encoded_len);
 
@@ -81,6 +84,10 @@ uint64_t base64_decode(const char *data, b64bytes *bytes) {
   // std::string result(last / 4 * 3 + pad1 + pad2, '\0');
   bytes->len = last / 4 * 3 + pad1 + pad2;
   bytes->data = reinterpret_cast<uint8_t*>(malloc(bytes->len));
+  if (bytes->data == NULL) {
+    bytes->len = 0;
+    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_MEM_ALLOC);
+  }
   (void)memset(bytes->data, '\0', bytes->len);
 
   // unsigned char *str = (unsigned char*) &result[0];

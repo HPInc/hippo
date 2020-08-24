@@ -18,15 +18,18 @@ Adder::Adder() :
 
 Adder::Adder(uint32_t device_index) :
     HippoSwDevice(devName, device_index) {
+  ADD_FILE_TO_MAP();
 }
 
 Adder::Adder(const char *address, uint32_t port) :
     HippoSwDevice(devName, address, port) {
+  ADD_FILE_TO_MAP();
 }
 
 Adder::Adder(const char *address, uint32_t port,
                          uint32_t device_index) :
     HippoSwDevice(devName, address, port, device_index) {
+  ADD_FILE_TO_MAP();
 }
 
 Adder::~Adder(void) {
@@ -60,15 +63,11 @@ uint64_t Adder::add_point(const PointX &p1,
   nl::json jget;
   void *jget_ptr = reinterpret_cast<void*>(&jget);
 
-  // std::string s = reinterpret_cast<nl::json*>(jset_ptr)->dump();
-  // fprintf(stderr, "SendRawMsg('%s')\n", s.c_str());
-  int timeout = 1;
+  unsigned int timeout = 1;
   if (err = SendRawMsg("add_point", jset_ptr, timeout, jget_ptr)) {
     return err;
   }
   // get the results
-  // s = reinterpret_cast<nl::json*>(jget_ptr)->dump();
-  // fprintf(stderr, "  Response('%s')\n", s.c_str());
   if (pr != NULL) {
     err = PointX_json2c(jget_ptr, pr);
   }
@@ -94,15 +93,11 @@ uint64_t Adder::keystone(const CameraKeystoneX &k,
   nl::json jget;
   void *jget_ptr = reinterpret_cast<void*>(&jget);
 
-  // std::string s = reinterpret_cast<nl::json*>(jset_ptr)->dump();
-  // fprintf(stderr, "SendRawMsg('%s')\n", s.c_str());
-  int timeout = 1;
+  unsigned int timeout = 1;
   if (err = SendRawMsg("keystone", jset_ptr, timeout, jget_ptr)) {
     return err;
   }
   // get the results
-  // s = reinterpret_cast<nl::json*>(jget_ptr)->dump();
-  // fprintf(stderr, "  Response('%s')\n", s.c_str());
   if (kr != NULL) {
     err = CameraKeystoneX_json2c(jget_ptr, kr);
   }
@@ -121,15 +116,11 @@ uint64_t Adder::version(wcharptr *v) {
   nl::json jget;
   void *jget_ptr = reinterpret_cast<void*>(&jget);
 
-  // std::string s = reinterpret_cast<nl::json*>(jset_ptr)->dump();
-  // fprintf(stderr, "SendRawMsg('%s')\n", s.c_str());
-  int timeout = 1;
+  unsigned int timeout = 1;
   if (err = SendRawMsg("version", jset_ptr, timeout, jget_ptr)) {
     return err;
   }
   // get the results
-  // s = reinterpret_cast<nl::json*>(jget_ptr)->dump();
-  // fprintf(stderr, "  Response('%s')\n", s.c_str());
   if (v != NULL) {
     err = wcharptr_json2c(jget_ptr, v);
   }
@@ -148,15 +139,11 @@ uint64_t Adder::disconnect_device() {
   nl::json jget;
   void *jget_ptr = reinterpret_cast<void*>(&jget);
 
-  // std::string s = reinterpret_cast<nl::json*>(jset_ptr)->dump();
-  // fprintf(stderr, "SendRawMsg('%s')\n", s.c_str());
-  int timeout = 1;
+  unsigned int timeout = 1;
   if (err = SendRawMsg("disconnect_device", jset_ptr, timeout, jget_ptr)) {
     return err;
   }
   // get the results
-  // s = reinterpret_cast<nl::json*>(jget_ptr)->dump();
-  // fprintf(stderr, "  Response('%s')\n", s.c_str());
 
   return err;
 }
@@ -187,15 +174,11 @@ uint64_t Adder::binary_data(const b64bytes &b1,
   nl::json jget;
   void *jget_ptr = reinterpret_cast<void*>(&jget);
 
-  // std::string s = reinterpret_cast<nl::json*>(jset_ptr)->dump();
-  // fprintf(stderr, "SendRawMsg('%s')\n", s.c_str());
-  int timeout = 10;
+  unsigned int timeout = 10;
   if (err = SendRawMsg("binary_data", jset_ptr, timeout, jget_ptr)) {
     return err;
   }
   // get the results
-  // s = reinterpret_cast<nl::json*>(jget_ptr)->dump();
-  // fprintf(stderr, "  Response('%s')\n", s.c_str());
   if (br1 != NULL) {
     err = b64bytes_json2c(jget_ptr, br1);
   }
@@ -214,15 +197,11 @@ uint64_t Adder::return_error() {
   nl::json jget;
   void *jget_ptr = reinterpret_cast<void*>(&jget);
 
-  // std::string s = reinterpret_cast<nl::json*>(jset_ptr)->dump();
-  // fprintf(stderr, "SendRawMsg('%s')\n", s.c_str());
-  int timeout = 2;
+  unsigned int timeout = 2;
   if (err = SendRawMsg("return_error", jset_ptr, timeout, jget_ptr)) {
     return err;
   }
   // get the results
-  // s = reinterpret_cast<nl::json*>(jget_ptr)->dump();
-  // fprintf(stderr, "  Response('%s')\n", s.c_str());
 
   return err;
 }
@@ -246,18 +225,35 @@ uint64_t Adder::slow_call(const int32_t &f1,
   nl::json jget;
   void *jget_ptr = reinterpret_cast<void*>(&jget);
 
-  // std::string s = reinterpret_cast<nl::json*>(jset_ptr)->dump();
-  // fprintf(stderr, "SendRawMsg('%s')\n", s.c_str());
-  int timeout = 30;
+  unsigned int timeout = 30;
   if (err = SendRawMsg("slow_call", jset_ptr, timeout, jget_ptr)) {
     return err;
   }
   // get the results
-  // s = reinterpret_cast<nl::json*>(jget_ptr)->dump();
-  // fprintf(stderr, "  Response('%s')\n", s.c_str());
   if (f2 != NULL) {
     err = int32_t_json2c(jget_ptr, f2);
   }
+  return err;
+}
+
+uint64_t Adder::infinite_timeout() {
+  uint64_t err = 0LL;
+
+  // parse parameters
+  // create a list with all parameters
+  nl::json jset;
+  void *jset_ptr = reinterpret_cast<void*>(&jset);
+
+  // send command
+  nl::json jget;
+  void *jget_ptr = reinterpret_cast<void*>(&jget);
+
+  unsigned int timeout = 0;
+  if (err = SendRawMsg("infinite_timeout", jset_ptr, timeout, jget_ptr)) {
+    return err;
+  }
+  // get the results
+
   return err;
 }
 
@@ -287,15 +283,11 @@ uint64_t Adder::hidden_array(const DataWithB64Bytes &data_b64,
   nl::json jget;
   void *jget_ptr = reinterpret_cast<void*>(&jget);
 
-  // std::string s = reinterpret_cast<nl::json*>(jset_ptr)->dump();
-  // fprintf(stderr, "SendRawMsg('%s')\n", s.c_str());
-  int timeout = 1;
+  unsigned int timeout = 1;
   if (err = SendRawMsg("hidden_array", jset_ptr, timeout, jget_ptr)) {
     return err;
   }
   // get the results
-  // s = reinterpret_cast<nl::json*>(jget_ptr)->dump();
-  // fprintf(stderr, "  Response('%s')\n", s.c_str());
   if (ret != NULL) {
     err = DataWithB64Bytes_json2c(jget_ptr, ret);
   }
@@ -428,6 +420,15 @@ const char Adder_device_json[] =
 "  },"
 "  {"
 "   \"doc\": ["
+"    \"infinite timeout function call to test timeouts\""
+"   ],"
+"   \"method\": \"infinite_timeout\","
+"   \"params\": [],"
+"   \"result\": [],"
+"   \"timeout\": 0"
+"  },"
+"  {"
+"   \"doc\": ["
 "    \"function to test b64 and arrays inside schemas to test leaks\""
 "   ],"
 "   \"method\": \"hidden_array\","
@@ -471,6 +472,7 @@ uint64_t Adder::ProcessCommand(const char *method, void *param, void *result) {
     {"binary_data", &Adder::binary_data_cb_p},
     {"return_error", &Adder::return_error_cb_p},
     {"slow_call", &Adder::slow_call_cb_p},
+    {"infinite_timeout", &Adder::infinite_timeout_cb_p},
     {"hidden_array", &Adder::hidden_array_cb_p},
   };
   return (this->*(map[method]))(param, result);
@@ -508,6 +510,10 @@ uint64_t Adder::return_error_cb() {
 
 uint64_t Adder::slow_call_cb(const int32_t &,
                              int32_t *) {
+  return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_FUNC_NOT_AVAILABLE);
+}
+
+uint64_t Adder::infinite_timeout_cb() {
   return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_FUNC_NOT_AVAILABLE);
 }
 
@@ -654,6 +660,16 @@ uint64_t Adder::slow_call_cb_p(void *param, void *result) {
     return err;
   }
   return err;
+}
+
+uint64_t Adder::infinite_timeout_cb_p(void *param, void *result) {
+  uint64_t err = 0LL;
+  nl::json *params = reinterpret_cast<nl::json*>(param);
+
+
+  if (err = infinite_timeout_cb()) {
+    return err;
+  }  return err;
 }
 
 uint64_t Adder::hidden_array_cb_p(void *param, void *result) {

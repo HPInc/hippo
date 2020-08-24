@@ -2,8 +2,9 @@
 // Copyright 2019 HP Development Company, L.P.
 // SPDX-License-Identifier: MIT
 
-#ifndef TEST_INCLUDE_ADDER_H_
-#define TEST_INCLUDE_ADDER_H_
+
+#ifndef SWDEVICES_INCLUDE_ADDER_H_
+#define SWDEVICES_INCLUDE_ADDER_H_
 
 #include <include/hippo_swdevice.h>
 
@@ -74,6 +75,8 @@ class Adder : public HippoSwDevice {
   // slow function call to test timeouts
   uint64_t slow_call(const int32_t &f1,
                      int32_t *f2);
+  // infinite timeout function call to test timeouts
+  uint64_t infinite_timeout();
   // function to test b64 and arrays inside schemas to test leaks
   uint64_t hidden_array(const DataWithB64Bytes &data_b64,
                         const DataWithWcharptr &data_wcharptr,
@@ -104,6 +107,8 @@ class Adder : public HippoSwDevice {
   // slow function call to test timeouts
   virtual uint64_t slow_call_cb(const int32_t &f1,
                                 int32_t *f2);
+  // infinite timeout function call to test timeouts
+  virtual uint64_t infinite_timeout_cb();
   // function to test b64 and arrays inside schemas to test leaks
   virtual uint64_t hidden_array_cb(const DataWithB64Bytes &data_b64,
                                    const DataWithWcharptr &data_wcharptr,
@@ -119,6 +124,7 @@ class Adder : public HippoSwDevice {
   uint64_t binary_data_cb_p(void *param, void *result);
   uint64_t return_error_cb_p(void *param, void *result);
   uint64_t slow_call_cb_p(void *param, void *result);
+  uint64_t infinite_timeout_cb_p(void *param, void *result);
   uint64_t hidden_array_cb_p(void *param, void *result);
 
   // Adder's types parsers/generators
@@ -146,4 +152,4 @@ class Adder : public HippoSwDevice {
 
 }   // namespace hippo
 
-#endif   // TEST_INCLUDE_ADDER_H_
+#endif   // SWDEVICES_INCLUDE_ADDER_H_

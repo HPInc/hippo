@@ -354,8 +354,8 @@ class DLLEXPORT HippoDevice {
 
   uint64_t SendRawMsg(const char *method, void *ret_obj);
   uint64_t SendRawMsg(const char *method, const void *param, void *ret_obj);
-  uint64_t SendRawMsg(const char *method, const void *param, int timeout,
-                      void *ret_obj);
+  uint64_t SendRawMsg(const char *method, const void *param,
+                      unsigned int timeout, void *ret_obj);
 
   uint64_t GenerateJsonRpc(const char *devName, const char *method,
                            const void *param, unsigned char **jsonrpc);

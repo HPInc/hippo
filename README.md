@@ -8,6 +8,11 @@ websocket communication and JSONRPC-2.0 protocol for the user.
 stage and there may be a few bugs in it.  Please report any bugs and they
 will be promptly fixed
 
+Currently the hiPPo API has not yet implemented the following functions 
+that are in the documentation found in the 5_24_2018 version of SoHAL:
+- system.temperatures with a parameter to specifiy which temperatures to get (system.temperatures without parameters is implemented)
+- depthcamera.enable_filter()
+
 As an example, the following code should turn on `Sprout`'s projector:
 ```
 #include "include/projector.h"
@@ -134,3 +139,12 @@ So yes, we're running `hiPPo` code through `cpplint` (for C++) before accepting
 a pull request. We are also setting the warning level to the maximum and
 treating all warnings as errors. Please make sure you follow this guide
 if you submit any pull request. Thank you!
+
+
+## Installation
+
+In order to compile `hiPPo` you will need a folder with its dependencies.
+Please contact any of the developers to get access to it if needed.
+
+HiPPo does not depend on any library at run-time, except the ones from the
+operating system and Visual Studio runtime.

@@ -3,21 +3,135 @@
 # Copyright 2019 HP Development Company, L.P.
 # SPDX-License-Identifier: MIT
 
-import sys
+"""This script reads and parses a file containing a SW device API definition
+using the json schema (http://json-schema.org/) specification and generates
+the header (.h) and source (.cc) files that define a c++ class implementing
+the schema API including all the type conversion functions from c++ to
+SoHal's jsonrpc 2.0 that are called automatically"""
+
 import os
 import json
+import argparse
 from collections import OrderedDict
 from functools import reduce
 import jsonschema as js
 
 
-header_str = """
+#
+# how to translate schema types to c++
+#
+SCHEMA_2_C = {
+    'string' : 'wcharptr',
+    'integer' : 'int32_t',
+    'number' : 'float',
+    'boolean' : 'bool',
+    'b64bytes': 'b64bytes'
+}
+
+def indent_func_def(func_def):
+    """Ensures max columns in a function signature follows style guide"""
+    if len(func_def) < 80:
+        return func_def
+    parts = func_def.split(',')
+    idx = func_def.index('(')
+    params = parts[0]
+    for x in parts[1:]:
+        params += ',\n{}{}'.format(idx * ' ', x)
+    return params
+
+#
+def get_swdev(file_name, schemas_dir):
+    """Reads and validates the sw definition schema file"""
+    # JSON file describing the SW device
+    swdev_file_name = os.path.abspath(file_name)
+    # path to all files describing schemas
+    schemas_path = os.path.abspath(schemas_dir)
+    with open(swdev_file_name) as fp:
+        swdev = json.load(fp)
+    #
+    # validate the parameter file against a DeviceConnected schema
+    schema_file_name = os.path.join(os.path.abspath(schemas_path),
+                                    "DeviceConnected.schema.json")
+    with open(schema_file_name) as fp:
+        schema = json.load(fp)
+    schema_path = ('file:///' +
+                   os.path.split(schema_file_name)[0].replace("\\", "/") +
+                   '/')
+    resolver = js.RefResolver(schema_path, None)
+    js.validate(swdev, schema, resolver=resolver)
+    #
+    swdev['klass'] = (''.join(c.upper() if i == 0 else c for i, c in
+                              enumerate(swdev['device_name'])))
+    swdev['device_name'] = swdev['device_name'].lower()
+    return swdev
+
+#
+# modify sw device json definition to go into c++ file as string
+# so we have always the same order
+def get_sw_json(swdev):
+    """Converts the data in the schema file into a string that can be sent
+    to SoHal's device_connected API
+    """
+    swdev_o = OrderedDict([('device_name', swdev['device_name']),
+                           ('api', swdev['api'])])
+    sw_json = json.dumps(swdev_o, indent=1)
+    sw_json = sw_json.replace('"', '\\"')
+    sw_json_lst = sw_json.split('\n')
+    sw_json_lst[0] = '[' + sw_json_lst[0]
+    sw_json_lst[-1] += ']'
+    sw_json_lst = list(map('"{}"\n'.format, sw_json_lst))
+    sw_json_lst[-1] = sw_json_lst[-1][:-2] + '\";'
+    sw_json = ''.join(sw_json_lst)
+    return sw_json
+
+# public methods
+def get_methods(klass, swdev_api):
+    """Returns a dictionary with the data read from the sw device schema file
+    and a dictionary with the types of the parameters
+    """
+    param_types = set()
+    methods = []
+    for m in swdev_api:
+        if m['timeout'] < 0:
+            raise  Exception('Timeout for method \"'+m['method']+ \
+                             '\" is '+ str(m['timeout']) +' which is invalid.')
+        doc_list = m['doc'] if 'doc' in m else ['<no documentation found>']
+        doc = ''.join(map('  // {}\n'.format, doc_list))
+        pm = {'class' : klass,
+              'ret' : 'uint64_t',
+              'method' : m['method'],
+              'timeout': m['timeout'],
+              'doc' : doc,
+              'in' : [],
+              'out' : []}
+        for p in m['params']:
+            p_type = p['type']
+            try:
+                p_type = SCHEMA_2_C[p_type]
+            except KeyError:
+                param_types.add(p_type)
+            pm['in'].append((p_type, p['name']))
+        for r in m['result']:
+            r_type = r['type']
+            try:
+                r_type = SCHEMA_2_C[r_type]
+            except KeyError:
+                param_types.add(r_type)
+            pm['out'].append((r_type, r['name']))
+        methods.append(pm)
+    return methods, param_types
+
+
+#
+# string template for full sw device class definition header (.h)
+#
+HEADER_STR = """
 // {copyright}
 
 #ifndef SWDEVICES_INCLUDE_{KLASS}_H_
 #define SWDEVICES_INCLUDE_{KLASS}_H_
 
-#include <hippo_swdevice.h>
+#include <include/hippo_swdevice.h>
 
 namespace hippo {{
 {structs}
@@ -52,26 +166,12 @@ class {klass} : public HippoSwDevice {{
 #endif   // SWDEVICES_INCLUDE_{KLASS}_H_
 """
 
-struct_str = """
-typedef struct {name} {{
-{members}}} {name};
-"""
-
-member_str = """  {} {};
-"""
-
-c2json_str = """  uint64_t {type}_c2json(const {type} &set,
-                   {padding}void *obj);
-"""
-
-json2c_str = """  uint64_t {type}_json2c(const void *obj,
-                   {padding}{type} *get);
-"""
-
-source_str = """
+#
+# string template for full sw device class function implementation (.cc)
+#
+SOURCE_STR = """
 // {copyright}
-
-#include <json.hpp>
+#include <include/json.hpp>
 #include \"../include/{name}.h\"
 
 namespace nl = nlohmann;
@@ -87,15 +187,18 @@ const char devName[] = "{name}";
 
 {klass}::{klass}(uint32_t device_index) :
     HippoSwDevice(devName, device_index) {{
+  ADD_FILE_TO_MAP();
 }}
 
 {klass}::{klass}(const char *address, uint32_t port) :
     HippoSwDevice(devName, address, port) {{
+  ADD_FILE_TO_MAP();
 }}
 
 {klass}::{klass}(const char *address, uint32_t port,
                          uint32_t device_index) :
     HippoSwDevice(devName, address, port, device_index) {{
+  ADD_FILE_TO_MAP();
 }}
 
 {klass}::~{klass}(void) {{
@@ -122,28 +225,62 @@ uint64_t {klass}::connect_device(void) {{
 }}    // namespace hippo
 """
 
-src_c2json_str = (
-    """uint64_t {klass}::{type}_c2json(const {type} &set, void *obj) {{
-  if (obj == NULL) {{
-    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
-  }}
-  nl::json params;{members}
-  *(reinterpret_cast<nl::json*>(obj)) = params;
-  return HIPPO_OK;
-}}
+#
+# generating functions
+#
+def parse_schema(structs, depth, schema_file_name, all_types):
+    """Parses the schema file and fills up a dictionary with its content
+    """
+    schema_file_name = os.path.abspath(schema_file_name)
+    # do not add the types that already exist due to other methods
+    if schema_file_name in all_types:
+        return
 
-""")
+    all_types.append(schema_file_name)
 
-src_c2json_aux_str = """
-  nl::json {name};
-  if ({type}_c2json(set.{name}, &{name})) {{
-    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
-  }}
-  params[\"{name}\"] = {name};
+    # need to verify the schemas are valid
+    # print('>>> ', schema_file_name)
+
+    with open(schema_file_name) as fp:
+        schema = json.load(fp)
+    #
+    # schema_path = 'file:///' + os.path.abspath('.').replace("\\", "/") + '/'
+    # resolver = js.RefResolver(schema_path, None)
+    # js.validate(data, schema, resolver=resolver)
+    #
+    name = schema['$id']
+    name = name[:name.index('.schema.json')]
+    structs[name] = {'depth' : depth, 'members' : []}
+    for k, v in schema['properties'].items():
+        if 'type' in v:
+            structs[name]['members'].append({'name': k,
+                                             'type': SCHEMA_2_C[v['type']]})
+        elif '$ref' in v:
+            if v['$ref'] not in structs:
+                parse_schema(structs, depth+1,
+                             os.path.join(os.path.dirname(schema_file_name),
+                                          v['$ref']),
+                             all_types)
+
+            n = v['$ref']
+            n = n[:n.index('.schema.json')]
+            structs[name]['members'].append({'name': k, 'type': n})
+
+#
+# generate structs, header and type conversions
+#
+SRC_JSON2C_AUX_STR = \
+"""    j_obj = reinterpret_cast<const void*>(&j->at("{name}"));
+    if ({type}_json2c(j_obj, &(get->{name}))) {{
+      return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
+    }}
 """
 
-src_json2c_str = (
-    """uint64_t {klass}::{type}_json2c(const void *obj, {type} *get) {{
+SRC_JSON2C_DEF_STR = (
+    """uint64_t {klass}::{type}_json2c(const void *obj, {type} *get) {{""")
+
+SRC_JSON2C_STR = (
+    """{func_def}
   uint64_t err = HIPPO_OK;
   if (obj == NULL || get == NULL) {{
     return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
@@ -162,14 +299,156 @@ src_json2c_str = (
 
 """)
 
-src_json2c_aux_str = \
-"""    j_obj = reinterpret_cast<const void*>(&j->at("{name}"));
-    if ({type}_json2c(j_obj, &(get->{name}))) {{
-      return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
-    }}
+SRC_C2JSON_AUX_STR = """
+  nl::json {name};
+  if ({type}_c2json(set.{name}, &{name})) {{
+    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
+  }}
+  params[\"{name}\"] = {name};
 """
 
-method_src = """
+SRC_C2JSON_DEF_STR = (
+    """uint64_t {klass}::{type}_c2json(const {type} &set, void *obj) {{""")
+
+SRC_C2JSON_STR = (
+    """{func_def}
+  if (obj == NULL) {{
+    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
+  }}
+  nl::json params;{members}
+  *(reinterpret_cast<nl::json*>(obj)) = params;
+  return HIPPO_OK;
+}}
+
+""")
+
+C2JSON_STR = """  uint64_t {type}_c2json(const {type} &set,
+                   {padding}void *obj);
+"""
+
+JSON2C_STR = """  uint64_t {type}_json2c(const void *obj,
+                   {padding}{type} *get);
+"""
+
+STRUCT_STR = """
+typedef struct {name} {{
+{members}}} {name};
+"""
+
+
+def generate_header_funcs_src(klass, structs):
+    """ Goes through the structs dictionary and returns the structs
+    definitions (in structs), the type conversion function headers (in funcs)
+    and source code (in src)
+    """
+    header = ''
+    funcs = ''
+    for k in sorted(structs, key=lambda x: structs[x]['depth'], reverse=True):
+        v = structs[k]
+        members = ""
+        for m in v['members']:
+            members = members + '  {} {};\n'.format(m['type'], m['name'])
+        x = STRUCT_STR.format(name=k, members=members)
+        header = header + x
+        padding = len(k) * ' '
+        funcs = funcs + C2JSON_STR.format(type=k, padding=padding)
+        funcs = funcs + JSON2C_STR.format(type=k, padding=padding)
+
+    src = ''
+    for k in sorted(structs, key=lambda x: structs[x]['depth'], reverse=True):
+        v = structs[k]
+        members_c2j = ""
+        members_j2c = ""
+        for m in v['members']:
+            members_c2j = (members_c2j +
+                           SRC_C2JSON_AUX_STR.format(type=m['type'],
+                                                     name=m['name']))
+            members_j2c = (members_j2c +
+                           SRC_JSON2C_AUX_STR.format(type=m['type'],
+                                                     name=m['name']))
+        func_def = SRC_C2JSON_DEF_STR.format(type=k, klass=klass)
+        func_def = indent_func_def(func_def)
+        src = src + SRC_C2JSON_STR.format(func_def=func_def, #type=k,
+                                          members=members_c2j)
+                                          # klass=klass)
+
+        func_def = SRC_JSON2C_DEF_STR.format(type=k, klass=klass)
+        func_def = indent_func_def(func_def)
+
+        src = src + SRC_JSON2C_STR.format(func_def=func_def,
+                                          members=members_j2c)
+    return header, funcs, src
+
+
+#
+def get_methods_header_string(methods):
+    """Generates the header function definitions for sw device client APIs"""
+    methods_hdr_str = ''
+    for m in methods:
+        s = '  {ret} {method}('.format(**m)
+        len_s = len(s)
+        for i, p in enumerate(m['in']):
+            padding = len_s * ' ' if i != 0 else ''
+            s = s + '{0}const {1} &{2},\n'.format(padding, p[0], p[1])
+        padding = len_s * ' ' if m['in'] else ''
+        for i, p in enumerate(m['out']):
+            s = s + '{0}{1} *{2},\n'.format(padding, p[0], p[1])
+        methods_hdr_str = (methods_hdr_str + m['doc'] +
+                           (s[:-2] if s[-2] == ',' else s) + ');\n')
+    return methods_hdr_str
+
+#
+def callbacks_hrd_string(methods):
+    """Generates the header function definitions for sw device server
+    callback APIs
+    """
+    callbacks_hdr_str = ''
+    for m in methods:
+        s = '  virtual {ret} {method}_cb('.format(**m)
+        len_s = len(s)
+        for i, p in enumerate(m['in']):
+            padding = len_s * ' ' if i != 0 else ''
+            s = s + '{0}const {1} &{2},\n'.format(padding, p[0], p[1])
+        padding = len_s * ' ' if m['in'] else ''
+        for i, p in enumerate(m['out']):
+            s = s + '{0}{1} *{2},\n'.format(padding, p[0], p[1])
+        callbacks_hdr_str = (callbacks_hdr_str + m['doc'] +
+                             (s[:-2] if s[-2] == ',' else s) + ');\n')
+    return callbacks_hdr_str
+
+#
+def callbacks_priv_hdr_string(methods):
+    """Generates the header function definitions for sw device server private
+    callback APIs
+    """
+    callbacks_priv_hdr_str = ''
+    for m in methods:
+        callbacks_priv_hdr_str = (
+            callbacks_priv_hdr_str +
+            '  {ret} {method}_cb_p(void *param, void *result);\n'.format(**m))
+    return callbacks_priv_hdr_str
+
+#
+MULTI_PARAM_STR = """  // create a list with all parameters
+  nl::json jset;
+{param}  void *jset_ptr = reinterpret_cast<void*>(&jset);
+"""
+
+MULTI_PARAM_ITEM_STR = """  jset.push_back(j{name});
+"""
+
+METHOD_JSON2C_SRC_STR = """  if ({name} != NULL) {{
+    err = {type}_json2c(jget_ptr, {name});
+  }}"""
+
+METHOD_C2JSON_SRC_STR = """  nl::json j{name};
+  void *j{name}_ptr = reinterpret_cast<void*>(&j{name});
+  if (err = {type}_c2json({name}, j{name}_ptr)) {{
+    return err;
+  }}
+"""
+
+METHOD_SRC_STR = """
 {sig}) {{
   uint64_t err = 0LL;
 
@@ -179,40 +458,55 @@ method_src = """
   nl::json jget;
   void *jget_ptr = reinterpret_cast<void*>(&jget);
 
-  // std::string s = reinterpret_cast<nl::json*>(jset_ptr)->dump();
-  // fprintf(stderr, "SendRawMsg('%s')\\n", s.c_str());
-  int timeout = {timeout};
+  unsigned int timeout = {timeout};
   if (err = SendRawMsg("{method}", jset_ptr, timeout, jget_ptr)) {{
     return err;
   }}
   // get the results
-  // s = reinterpret_cast<nl::json*>(jget_ptr)->dump();
-  // fprintf(stderr, "  Response('%s')\\n", s.c_str());
 {json2c}
   return err;
 }}
 """
 
-method_c2json_src = """  nl::json j{name};
-  void *j{name}_ptr = reinterpret_cast<void*>(&j{name});
-  if (err = {type}_c2json({name}, j{name}_ptr)) {{
-    return err;
-  }}
-"""
+def methods_src_string(methods):
+    """Generates the source code for sw device client APIs"""
+    methods_src_str = ''
+    for m in methods:
+        s = '{ret} {class}::{method}('.format(**m)
+        len_s = len(s)
+        src_c2json = ''
+        src_json2c = ''
+        param = ''
+        for i, p in enumerate(m['in']):
+            padding = len_s*' ' if i != 0 else ''
+            s = s + '{0}const {1} &{2},\n'.format(padding,
+                                                  p[0],
+                                                  p[1])
+            src_c2json = src_c2json + METHOD_C2JSON_SRC_STR.format(type=p[0],
+                                                                   name=p[1])
+            param = param + MULTI_PARAM_ITEM_STR.format(name=p[1])
+        #
+        for i, p in enumerate(m['out']):
+            padding = len_s * ' ' if m['in'] else ''
+            s = s + '{0}{1} *{2},\n'.format(padding,
+                                            p[0],
+                                            p[1])
+            src_json2c = src_json2c + METHOD_JSON2C_SRC_STR.format(type=p[0],
+                                                                   name=p[1])
 
-method_json2c_src = """  if ({name} != NULL) {{
-    err = {type}_json2c(jget_ptr, {name});
-  }}"""
+        param = MULTI_PARAM_STR.format(param=param)
+        methods_src_str = (
+            methods_src_str +
+            METHOD_SRC_STR.format(sig=s[:-2] if s[-2] == ',' else s,
+                                  c2json=src_c2json,
+                                  json2c=src_json2c,
+                                  method=m['method'],
+                                  timeout=m['timeout'],
+                                  param=param))
+    return methods_src_str
 
-multi_param_str = """  // create a list with all parameters
-  nl::json jset;
-{param}  void *jset_ptr = reinterpret_cast<void*>(&jset);
-"""
-
-multi_param_item = """  jset.push_back(j{name});
-"""
-
-process_cmd_str = """
+#
+PROCESS_CMD_STR = """
 uint64_t {klass}::ProcessCommand(const char *method, void *param, void *result) {{
   typedef uint64_t ({klass}::*cb)(void*, void*);
 
@@ -222,12 +516,76 @@ uint64_t {klass}::ProcessCommand(const char *method, void *param, void *result) 
 }}
 """
 
-callback_src_str = """{sig}) {{
+def process_cmd_string(klass, swdev_api):
+    """Generates the ProcessCommand API that is used to route the method string
+    in the jsonrpc to the private server callback
+    """
+    methods_str = ''
+    for m in swdev_api:
+        methods_str = (methods_str +
+                       "    {{\"{m}\", &{klass}::{m}_cb_p}},\n".format(
+                           m=m['method'],
+                           klass=klass))
+    process_cmd = PROCESS_CMD_STR.format(klass=klass,
+                                         methods=methods_str,
+                                         num_methods=len(swdev_api)-1)
+    return process_cmd
+
+#
+CALLBACK_SRC_STR = """{sig}) {{
   return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_FUNC_NOT_AVAILABLE);
 }}
 """
 
-callback_priv_str = """uint64_t {klass}::{method}_cb_p(void *param, void *result) {{
+def callback_string(methods):
+    """Generates the default callback methods. These methods should be overriden
+    in a derived class to provide the actual sw device server functionality
+    """
+    callback_str = ''
+    for m in methods:
+        s = '{ret} {class}::{method}_cb('.format(**m)
+        len_s = len(s)
+        src_c2json = ''
+        src_json2c = ''
+        param = ''
+        for i, p in enumerate(m['in']):
+            padding = len_s*' ' if i != 0 else ''
+            s = s + '{0}const {1} &,\n'.format(padding,
+                                               p[0])
+            src_c2json = src_c2json + METHOD_C2JSON_SRC_STR.format(type=p[0],
+                                                                   name=p[1])
+            param = param + MULTI_PARAM_ITEM_STR.format(name=p[1])
+        #
+        padding = len_s * ' ' if len(m['in']) != 0 else ''
+        for i, p in enumerate(m['out']):
+            s = s + '{0}{1} *,\n'.format(padding,
+                                         p[0])
+            src_json2c = src_json2c + METHOD_JSON2C_SRC_STR.format(type=p[0],
+                                                                   name=p[1])
+        callback_str = callback_str + CALLBACK_SRC_STR.format(
+            sig=s[:-2] if s[-2] == ',' else s) + '\n'
+    return callback_str
+
+#
+# callback_priv_string
+#
+CALLBACK_JSON2C_STR = """  {type} {name};
+  try {{
+    if (err = {type}_json2c(&params->at({idx}), &{name})) {{
+      return err;
+    }}
+  }} catch (nl::json::exception) {{     // out_of_range or type_error
+    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
+  }}
+"""
+
+CALLBACK_C2JSON_STR = """
+  if (err = {type}_c2json({name}, result)) {{
+    return err;
+  }}
+"""
+
+CALLBACK_PRIV_STR = """uint64_t {klass}::{method}_cb_p(void *param, void *result) {{
   uint64_t err = 0LL;
   nl::json *params = reinterpret_cast<nl::json*>(param);
 
@@ -239,338 +597,25 @@ callback_priv_str = """uint64_t {klass}::{method}_cb_p(void *param, void *result
 
 """
 
-callback_j2c_str = """  {type} {name};
-  try {{
-    if (err = {type}_json2c(&params->at({idx}), &{name})) {{
-      return err;
-    }}
-  }} catch (nl::json::exception) {{     // out_of_range or type_error
-    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
-  }}
-"""
-
-callback_c2j_str = """
-  if (err = {type}_c2json({name}, result)) {{
-    return err;
-  }}
-"""
-
-
-#
-# generating functions
-#
-# string, integer, number, object, array, boolean, null
-
-schema2c = {
-    'string' : 'wcharptr',
-    'integer' : 'int32_t',
-    'number' : 'float',
-    #'array': ''
-    'boolean' : 'bool',
-    'b64bytes': 'b64bytes'
-}
-
-
-def parse_schema(st, depth, schema_file_name, all_types):
-    schema_file_name = os.path.abspath(schema_file_name)
-    # do not add the types that already exist due to other methods
-    if schema_file_name in all_types:
-        return
-    else:
-        all_types.append(schema_file_name)
-
-    # need to verify the schemas are valid
-    # print('>>> ', schema_file_name)
-
-    with open(schema_file_name) as fp:
-        schema = json.load(fp)
-
-    #
-    # schema_path = 'file:///' + os.path.abspath('.').replace("\\", "/") + '/'
-    # resolver = js.RefResolver(schema_path, None)
-    # js.validate(data, schema, resolver=resolver)
-    #
-    name = schema['$id']
-    name = name[:name.index('.schema.json')]
-    st[name] = {'depth' : depth, 'members' : []}
-    for k, v in schema['properties'].items():
-        if 'type' in v:
-            st[name]['members'].append({'name': k,
-                                        'type': schema2c[v['type']]})
-        elif '$ref' in v:
-            if v['$ref'] not in st:
-                parse_schema(st, depth+1,
-                             os.path.join(os.path.dirname(schema_file_name),
-                                          v['$ref']),
-                             all_types)
-
-            n = v['$ref']
-            n = n[:n.index('.schema.json')]
-            st[name]['members'].append({'name': k, 'type': n})
-
-#
-# generate header code
-#
-def generate_header(klass, st):
-    header = ''
-    funcs = ''
-
-    for k in sorted(st, key=lambda x: st[x]['depth'], reverse=True):
-        v = st[k]
-        members = ""
-        for m in v['members']:
-            members = members + member_str.format(m['type'],
-                                                  m['name'])
-        x = struct_str.format(name=k, members=members)
-        header = header + x
-        padding = len(k) * ' '
-        funcs = funcs + c2json_str.format(type=k, padding=padding)
-        funcs = funcs + json2c_str.format(type=k, padding=padding)
-
-    src = ''
-    for k in sorted(st, key=lambda x: st[x]['depth'], reverse=True):
-        v = st[k]
-        members_c2j = ""
-        members_j2c = ""
-        for m in v['members']:
-            members_c2j = (members_c2j +
-                           src_c2json_aux_str.format(type=m['type'],
-                                                     name=m['name']))
-            members_j2c = (members_j2c +
-                           src_json2c_aux_str.format(type=m['type'],
-                                                     name=m['name']))
-        src = src + src_c2json_str.format(type=k,
-                                          members=members_c2j,
-                                          klass=klass)
-        src = src + src_json2c_str.format(type=k,
-                                          members=members_j2c,
-                                          klass=klass)
-    return header, funcs, src
-
-
-#
-def get_type_conversions(klass, ptype, path, all_types):
-
-    schema_file_name = os.path.join(path,    # '..',
-                                    'schemas',
-                                    ptype + '.schema.json')
-
-    # print(os.path.dirname(schema_file_name))
-    st = {}
-    depth = 0
-    parse_schema(st, depth, schema_file_name, all_types)
-    return generate_header(klass, st)
-
-
-###########
-
-if __name__ == '__main__':
-    # JSON file describing the SW device
-    swdev_file_name = os.path.abspath(sys.argv[1])
-    # path to all files describing schemas
-    schemas_path = os.path.abspath(sys.argv[2])
-
-    with open(swdev_file_name) as fp:
-        swdev = json.load(fp)
-    #
-    # validate the parameter file against a DeviceConnected schema
-    schema_file_name = os.path.join(os.path.abspath(schemas_path),
-                                    "DeviceConnected.schema.json")
-    with open(schema_file_name) as fp:
-        schema = json.load(fp)
-    schema_path = ('file:///' +
-                   os.path.split(schema_file_name)[0].replace("\\", "/") +
-                   '/')
-    resolver = js.RefResolver(schema_path, None)
-    js.validate(swdev, schema, resolver=resolver)
-    #
-    swdev_name = swdev['device_name']
-    klass = ''.join(c.upper() if i == 0 else c for i, c in enumerate(swdev_name))
-    swdev_api = swdev['api']
-    # print(swdev_name, swdev_api)
-    # print(swdev)
-    # modify sw device json definition to go into c++ file as string
-    swdev['device_name'] = swdev['device_name'].lower()
-    # so we have always the same order
-    swdev_o = OrderedDict([('device_name', swdev['device_name']),
-                           ('api', swdev['api'])])
-    sw_json = json.dumps(swdev_o, indent=1)
-    sw_json = sw_json.replace('"', '\\"')
-    sw_json_lst = sw_json.split('\n')
-    sw_json_lst[0] = '[' + sw_json_lst[0]
-    sw_json_lst[-1] += ']'
-    for i in range(len(sw_json_lst)):
-        sw_json_lst[i] = '"'+sw_json_lst[i]+'"\n'
-    sw_json_lst[-1] = sw_json_lst[-1][:-2] + '\";'
-    sw_json = ''.join(sw_json_lst)
-    # print(sw_json)
-    #
-    # generate header file
-    #
-    param_types = set()
-
-    # public methods
-    methods = []
-    for m in swdev_api:
-        doc_list = m['doc'] if 'doc' in m else ['<no documentation found>']
-        doc = ''.join(map(lambda x: '  // {}\n'.format(x), doc_list))
-        pm = {'class' : klass,
-              'ret' : 'uint64_t',
-              'method' : m['method'],
-              'timeout': m['timeout'],
-              'doc' : doc,
-              'in' : [],
-              'out' : []}
-
-        for i, p in enumerate(m['params']):
-            p_type = p['type']
-            try:
-                p_type = schema2c[p_type]
-            except:
-                param_types.add(p_type)
-            pm['in'].append((p_type, p['name']))
-
-        for r in m['result']:
-            r_type = r['type']
-            try:
-                r_type = schema2c[r_type]
-            except:
-                param_types.add(r_type)
-            pm['out'].append((r_type, r['name']))
-        methods.append(pm)
-
-    # public methods header string
-    methods_hdr_str = ''
-    for m in methods:
-        s = '  {ret} {method}('.format(**m)
-        len_s = len(s)
-        for i, p in enumerate(m['in']):
-            padding = len_s * ' ' if i is not 0 else ''
-            s = s + '{0}const {1} &{2},\n'.format(padding,
-                                                  p[0],
-                                                  p[1])
-        padding = len_s * ' ' if m['in'] else ''
-        for i, p in enumerate(m['out']):
-            s = s + '{0}{1} *{2},\n'.format(padding,
-                                            p[0],
-                                            p[1])
-        methods_hdr_str = (methods_hdr_str + m['doc'] +
-                           (s[:-2] if s[-2] == ',' else s) + ');\n')
-
-    # public callbacks
-    callbacks_hdr_str = ''
-    for m in methods:
-        s = '  virtual {ret} {method}_cb('.format(**m)
-        len_s = len(s)
-        for i, p in enumerate(m['in']):
-            padding = len_s * ' ' if i is not 0 else ''
-            s = s + '{0}const {1} &{2},\n'.format(padding,
-                                                  p[0],
-                                                  p[1])
-        padding = len_s * ' ' if m['in'] else ''
-        for i, p in enumerate(m['out']):
-            s = s + '{0}{1} *{2},\n'.format(padding,
-                                            p[0],
-                                            p[1])
-        callbacks_hdr_str = (callbacks_hdr_str + m['doc'] +
-                             (s[:-2] if s[-2] == ',' else s) + ');\n')
-
-
-    # protected callbacks
-    callbacks_priv_hdr_str = ''
-    for m in methods:
-        callbacks_priv_hdr_str = (
-            callbacks_priv_hdr_str +
-            '  {ret} {method}_cb_p(void *param, void *result);\n'.format(**m))
-
-
-    # public methods src string
-    methods_src_str = ''
-    for m in methods:
-        s = '{ret} {class}::{method}('.format(**m)
-        len_s = len(s)
-        src_c2json = ''
-        src_json2c = ''
-        param = ''
-        for i, p in enumerate(m['in']):
-            padding = len_s*' ' if i is not 0 else ''
-            s = s + '{0}const {1} &{2},\n'.format(padding,
-                                                  p[0],
-                                                  p[1])
-            src_c2json = src_c2json + method_c2json_src.format(type=p[0],
-                                                               name=p[1])
-            param = param + multi_param_item.format(name=p[1])
-        #
-        for i, p in enumerate(m['out']):
-            padding = len_s * ' ' if m['in'] else ''
-            s = s + '{0}{1} *{2},\n'.format(padding,
-                                            p[0],
-                                            p[1])
-            src_json2c = src_json2c + method_json2c_src.format(type=p[0],
-                                                               name=p[1])
-
-        param = multi_param_str.format(param=param)
-        methods_src_str = (methods_src_str +
-                           method_src.format(sig=s[:-2] if s[-2] == ',' else s,
-                                             c2json=src_c2json,
-                                             json2c=src_json2c,
-                                             method=m['method'],
-                                             timeout=m['timeout'],
-                                             param=param))
-
-    # process cmd
-    methods_str = ''
-    # process_switch = ''
-    for i, m in enumerate(swdev_api):
-        methods_str = (methods_str +
-                       "    {{\"{m}\", &{klass}::{m}_cb_p}},\n".format(
-                           m=m['method'],
-                           klass=klass))
-    process_cmd = process_cmd_str.format(klass=klass,
-                                         methods=methods_str,
-                                         num_methods=len(swdev_api)-1)
-
-    # callback
-    callback_str = ''
-    for m in methods:
-        s = '{ret} {class}::{method}_cb('.format(**m)
-        len_s = len(s)
-        src_c2json = ''
-        src_json2c = ''
-        param = ''
-        for i, p in enumerate(m['in']):
-            padding = len_s*' ' if i is not 0 else ''
-            s = s + '{0}const {1} &,\n'.format(padding,
-                                               p[0])
-            src_c2json = src_c2json + method_c2json_src.format(type=p[0],
-                                                               name=p[1])
-            param = param + multi_param_item.format(name=p[1])
-        #
-        padding = len_s * ' ' if len(m['in']) is not 0 else ''
-        for i, p in enumerate(m['out']):
-            s = s + '{0}{1} *,\n'.format(padding,
-                                         p[0])
-            src_json2c = src_json2c + method_json2c_src.format(type=p[0],
-                                                               name=p[1])
-        callback_str = callback_str + callback_src_str.format(
-            sig=s[:-2] if s[-2] == ',' else s) + '\n'
-
-    # callback priv
+def callback_priv_string(klass, methods):
+    """Generates the callback private methods. These methods will convert the
+    jsonrpc to c types, call the (overriden by the user) callback and
+    convert the return values back to jsonrcp so they can be sent to SoHal
+    """
     callback_priv = ''
     for m in methods:
         callback_j2c = ''
         callback_call_def = ''
         callback_call = '{}_cb('.format(m['method'])
         callback_c2j = ''
-        free = ''
         for i, p in enumerate(m['in']):
-            callback_j2c += callback_j2c_str.format(type=p[0],
-                                                    name=p[1],
-                                                    idx=i)
+            callback_j2c += CALLBACK_JSON2C_STR.format(type=p[0],
+                                                       name=p[1],
+                                                       idx=i)
             callback_call += '{}, '.format(p[1])
 
         for i, p in enumerate(m['out']):
-            callback_c2j += callback_c2j_str.format(type=p[0], name=p[1])
+            callback_c2j += CALLBACK_C2JSON_STR.format(type=p[0], name=p[1])
             callback_call += '&{}, '.format(p[1])
             callback_call_def += '  {type} {name};'.format(
                 type=p[0], name=p[1])
@@ -580,15 +625,39 @@ if __name__ == '__main__':
                          else callback_call) + ')'
 
         callback_priv += (
-            callback_priv_str.format(klass=klass,
+            CALLBACK_PRIV_STR.format(klass=klass,
                                      method=m['method'],
                                      callback_j2c=callback_j2c,
                                      callback_call_def=callback_call_def,
                                      callback_call=callback_call,
                                      callback_c2j=callback_c2j))
-    # main
-    path = os.path.dirname(os.path.realpath(__file__))
+    return callback_priv
 
+#
+def copyright_str(swdev):
+    """Generates the copyright message"""
+    return reduce('{}\n// {}\n'.format, swdev['copyright'])
+
+#
+def get_type_conversions(klass, ptype, path, all_types):
+    """Generates type definitions (in header), json2c and c2json conversion
+    function definition (in funcs) and source code (in src) for the types
+    passed as argument
+    """
+    schema_file_name = os.path.join(path,
+                                    'schemas',
+                                    ptype + '.schema.json')
+    structs = {}
+    depth = 0
+    parse_schema(structs, depth, schema_file_name, all_types)
+    return generate_header_funcs_src(klass, structs)
+
+#
+def header_funcs_src(klass, param_types, path):
+    """Generates type definitions (in header), json2c and c2json conversion
+    function definition (in funcs) and source code (in src) for all types
+    defined in the schema
+    """
     header = ''
     funcs = ''
     src = ''
@@ -599,39 +668,92 @@ if __name__ == '__main__':
         header = header + h
         funcs = funcs + f
         src = src + s
+    return header, funcs, src
 
-    cright = reduce(lambda x, y: '{}\n// {}\n'.format(x, y),
-                    swdev['copyright'])
-    all_header = header_str.format(copyright=cright,
-                                   KLASS=klass.upper(),
-                                   klass=klass,
-                                   methods=methods_hdr_str,
-                                   structs=header,
-                                   callbacks=callbacks_hdr_str,
-                                   callbacks_priv=callbacks_priv_hdr_str,
-                                   parsers=funcs)
+#
+def get_header(cright, klass, methods, header, funcs):
+    """Generates the sw device header (.h) file"""
+    # public methods header string
+    methods_hdr_str = get_methods_header_string(methods)
+    # public callbacks
+    callbacks_hdr_str = callbacks_hrd_string(methods)
+    # protected callbacks
+    callbacks_priv_hdr_str = callbacks_priv_hdr_string(methods)
+    #
+    return HEADER_STR.format(copyright=cright,
+                             KLASS=klass.upper(),
+                             klass=klass,
+                             methods=methods_hdr_str,
+                             structs=header,
+                             callbacks=callbacks_hdr_str,
+                             callbacks_priv=callbacks_priv_hdr_str,
+                             parsers=funcs)
 
-    # print(all_header)
-    header_file = os.path.join(path,    # '..',
+#
+def get_source(cright, klass, swdev, methods, src):
+    """Generates the sw device source code (.cc) file"""
+    # public methods src string
+    methods_src_str = methods_src_string(methods)
+    # process cmd
+    process_cmd = process_cmd_string(klass, swdev['api'])
+    # callback
+    callback_str = callback_string(methods)
+    # callback priv
+    callback_priv = callback_priv_string(klass, methods)
+    #
+    sw_json = get_sw_json(swdev)
+    #
+    return SOURCE_STR.format(copyright=cright,
+                             klass=klass,
+                             name=klass.lower(),
+                             methods=methods_src_str,
+                             process_cmd=process_cmd,
+                             callbacks=callback_str,
+                             callbacks_priv=callback_priv,
+                             json=sw_json,
+                             parsers=src)
+
+###########
+
+# pylint: disable=too-many-locals
+def main():
+    """Main function"""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--json",
+                        help='json file with SW device description')
+    parser.add_argument("--schemas",
+                        help='path to find the schemas files')
+    args = parser.parse_args()
+    # generate the cpp files
+    swdev = get_swdev(args.json, args.schemas)
+    klass = swdev['klass']
+    # public methods
+    methods, param_types = get_methods(klass, swdev['api'])
+    # main
+    path = os.path.dirname(os.path.realpath(__file__))
+    cright = copyright_str(swdev)
+    #
+    header, funcs, src = header_funcs_src(klass, param_types, path)
+    #
+    # putting together the header file
+    #
+    all_header = get_header(cright, klass, methods, header, funcs)
+    header_file = os.path.join(path,
                                'include',
                                '{}.h'.format(klass.lower()))
     os.makedirs(os.path.dirname(header_file), exist_ok=True)
     with open(header_file, 'w') as fp:
         fp.write(all_header)
-
     #
-    all_src = source_str.format(copyright=cright,
-                                klass=klass,
-                                name=klass.lower(),
-                                methods=methods_src_str,
-                                process_cmd=process_cmd,
-                                callbacks=callback_str,
-                                callbacks_priv=callback_priv,
-                                json=sw_json,
-                                parsers=src)
-    # print(all_src)
-    source_file = os.path.join(path,    # '..',
+    # putting together the source file
+    #
+    all_src = get_source(cright, klass, swdev, methods, src)
+    source_file = os.path.join(path,
                                'src',
                                '{}.cc'.format(klass.lower()))
     with open(source_file, 'w') as fp:
         fp.write(all_src)
+
+#
+if __name__ == '__main__':
+    main()
