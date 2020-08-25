@@ -311,6 +311,9 @@ uint64_t HippoSwDevice::wcharptr_c2json(const wcharptr &set, void *obj) {
   size_t size = 1 + std::wcsrtombs(NULL, &data, 0, &state);
   // fwprintf(stderr, L"%s  size: %zd\n", set.data, size);
   b64bytes b(size);
+  if (b.len == 0 || b.data ==NULL) {
+    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_MEM_ALLOC);
+  }
   (void)wcsrtombs(reinterpret_cast<char*>(b.data), &data, b.len, &state);
   // fprintf(stderr, "%s (str): '%s'\n", __FUNCTION__, b.data);
 
@@ -378,6 +381,10 @@ uint64_t HippoSwDevice::b64bytes_json2c(const void *obj, b64bytes *get) {
 
   get->len = decoded_string.length();
   get->data = reinterpret_cast<uint8_t*>(malloc(get->len));
+  if (get->data == NULL) {
+    get->len = 0;
+    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_MEM_ALLOC);
+  }
   memcpy(get->data, decoded_string.data(), get->len);
 #else
   uint64_t err;
@@ -397,8 +404,9 @@ wcharptr::wcharptr() :
     data(NULL) {
 }
 
-wcharptr::wcharptr(size_t size) {
-  data = reinterpret_cast<wchar_t*>(calloc(size, sizeof(wchar_t)));
+wcharptr::wcharptr(size_t size) :
+    data(NULL) {
+  resize(size);
 }
 
 wcharptr::~wcharptr() {
@@ -420,9 +428,9 @@ b64bytes::b64bytes() :
     data(NULL), len(0) {
 }
 
-b64bytes::b64bytes(size_t size) {
-  len = size;
-  data = reinterpret_cast<uint8_t*>(malloc(len));
+b64bytes::b64bytes(size_t size):
+    len(0), data(NULL) {
+  resize(size);
 }
 
 b64bytes::~b64bytes() {

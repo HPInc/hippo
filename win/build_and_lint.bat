@@ -15,14 +15,18 @@ pushd %~dp0
 call build.bat %config% %platform% || goto :error
 
 for %%f in (..\include\*.h) do (
-    cpplint.exe --counting=detailed %%f || goto :error
+    python -m cpplint --counting=detailed %%f || goto :error
 )
 
 for %%f in (..\src\*.cc) do (
-    cpplint.exe --counting=detailed %%f || goto :error
+    python -m cpplint --counting=detailed %%f || goto :error
 )
 
 for %%f in (..\py\*.py) do (
+    pylint --rcfile="..\.pylintrc" %%f || goto :error
+)
+
+for %%f in (..\swdevices\*.py) do (
     pylint --rcfile="..\.pylintrc" %%f || goto :error
 )
 

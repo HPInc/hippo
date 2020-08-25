@@ -85,6 +85,12 @@
       "type" : "integer"
     }],
     "timeout" : 30
+  },{
+    "doc" : ["infinite timeout function call to test timeouts"],
+    "method" : "infinite_timeout",
+    "params" : [],
+    "result" : [],
+    "timeout" : 0
   }, {
     "doc" : ["function to test b64 and arrays inside schemas to test leaks"],
     "method" : "hidden_array",

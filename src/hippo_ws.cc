@@ -203,19 +203,20 @@ class HippoLWS {
   int Receive(const char *in, size_t len);
 
   uint64_t Connect(const char *host, int port,
-                   const char *protocol_name, int timeout);
+                   const char *protocol_name, unsigned int timeout);
   uint64_t Disconnect();
   uint64_t StopSignalLoop(void);
   uint64_t SendRequest(const unsigned char *request, size_t req_len,
                        WsConnectionType type,
                        unsigned char **response, size_t *res_len);
   uint64_t SendRequest(const unsigned char *request, size_t req_len,
-                       WsConnectionType type, int timeout,
+                       WsConnectionType type, unsigned int timeout,
                        unsigned char **response, size_t *res_len);
 
-  uint64_t Read(unsigned char **response, size_t *len, int timeout);
+  uint64_t Read(unsigned char **response, size_t *len, unsigned int timeout);
   uint64_t Read_p(std::unique_lock<std::mutex> *lock,
-                  unsigned char **response, size_t *len, int timeout);
+                  unsigned char **response, size_t *len,
+                  unsigned int timeout);
 
   bool Connected(void);
 
@@ -287,7 +288,7 @@ class WsContext {
     }
     // we'll be waiting for the Established callback
     connections_ += connections_pending_increment_;
- clean_up:
+clean_up:
     lock.unlock();
     return err;
   }
@@ -380,7 +381,8 @@ int HippoLWS::ClientClosed() {
 }
 
 uint64_t HippoLWS::Connect(const char *host, int port,
-                           const char *protocol_name, int timeout) {
+                           const char *protocol_name,
+                           unsigned int timeout) {
   if (Connected()) {
     return MAKE_HIPPO_ERROR(facility_, HIPPO_WRONG_STATE_ERROR);
   }
@@ -558,7 +560,7 @@ uint64_t HippoLWS::SendRequest(const unsigned char *request,
                                WsConnectionType type,
                                unsigned char **response,
                                size_t *resp_len) {
-  int timeout = 10;
+  unsigned int timeout = 10;
   return SendRequest(request, req_len, type, timeout, response, resp_len);
 }
 
@@ -567,7 +569,7 @@ uint64_t HippoLWS::SendRequest(const unsigned char *request,
 uint64_t HippoLWS::SendRequest(const unsigned char *request,
                                size_t req_len,
                                WsConnectionType type,
-                               int timeout,
+                               unsigned int timeout,
                                unsigned char **response,
                                size_t *resp_len) {
   uint64_t err = 0LL;
@@ -599,7 +601,7 @@ clean_up:
 }
 
 uint64_t HippoLWS::Read(unsigned char **response, size_t *len,
-                        int timeout) {
+                        unsigned int timeout) {
   uint64_t err = 0;
 
   client_data_.response_.Init();
@@ -617,7 +619,7 @@ uint64_t HippoLWS::Read(unsigned char **response, size_t *len,
 // This function expect the lock on the ws_mutex to be captured
 uint64_t HippoLWS::Read_p(std::unique_lock<std::mutex> *lock,
                           unsigned char **response, size_t *len,
-                          int timeout) {
+                          unsigned int timeout) {
   uint64_t err = 0;
   *len = 0;
   *response = NULL;
@@ -657,7 +659,7 @@ uint64_t HippoLWS::Read_p(std::unique_lock<std::mutex> *lock,
     fprintf(stderr, "%s got data %p\n", __FUNCTION__, this);
 #endif
     client_data_.response_.GetData(response, len);
-  } else  if (cancel_read_) {
+  } else if (cancel_read_) {
 #ifdef VERBOSE_MSG
     fprintf(stderr, "%s cancelled %p\n", __FUNCTION__, this);
 #endif
@@ -695,13 +697,13 @@ HippoWS::~HippoWS(void) {
 }
 
 uint64_t HippoWS::Connect(const char *host, uint32_t port,
-                          WsConnectionType type, int timeout) {
+                          WsConnectionType type, unsigned int timeout) {
   return Connect(host, port, type, 0, timeout);
 }
 
 uint64_t HippoWS::Connect(const char *host, uint32_t port,
                           WsConnectionType type, uint32_t rx_buffer_size,
-                          int timeout) {
+                          unsigned int timeout) {
   if (!(hlws_ = new (std::nothrow) HippoLWS(facility_))) {
     return MAKE_HIPPO_ERROR(facility_, HIPPO_MEM_ALLOC);
   }
@@ -731,12 +733,13 @@ uint64_t HippoWS::StopSignalLoop() {
 
 uint64_t HippoWS::SendRequest(const unsigned char *request,
                               WsConnectionType type) {
-  int timeout = 10;
+  unsigned int timeout = 10;
   return SendRequest(request, type, timeout, NULL);
 }
 
 uint64_t HippoWS::SendRequest(const unsigned char *request,
-                              WsConnectionType type, int timeout,
+                              WsConnectionType type,
+                              unsigned int timeout,
                               unsigned char **response) {
   uint64_t err;
   size_t req_len = strlen(reinterpret_cast<const char*>(request));
@@ -759,7 +762,7 @@ uint64_t HippoWS::SendRequest(const unsigned char *request,
 }
 
 uint64_t HippoWS::SendRequest(const unsigned char *request, size_t req_len,
-                              WsConnectionType type, int timeout,
+                              WsConnectionType type, unsigned int timeout,
                               unsigned char **response, size_t *res_len) {
   *res_len = 0;
 
@@ -775,7 +778,7 @@ uint64_t HippoWS::SendRequest(const unsigned char *request, size_t req_len,
 uint64_t HippoWS::WaitForSignal(unsigned char **response) {
   uint64_t err;
   size_t len;
-  int timeout = 0;         // wait forever
+  unsigned int timeout = 0;         // wait forever
 
   if (err = hlws_->Read(response, &len, timeout)) {
     return err;
@@ -794,7 +797,7 @@ uint64_t HippoWS::WaitForSignal(unsigned char **response) {
 uint64_t HippoWS::ReadResponse(unsigned char **response) {
   uint64_t err;
   size_t len;
-  int timeout = 10;      // in seconds
+  unsigned int timeout = 10;      // in seconds
 
   if (err = hlws_->Read(response, &len, timeout)) {
     return err;

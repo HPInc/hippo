@@ -98,6 +98,13 @@ int main(int argc, char *argv[]) {
     h1.hidden_b64bytes.data[i] = i;
     h2.hidden_wcharptr.data[i] = i+1;
   }
+
+  if (err = adder.infinite_timeout()) {
+	  print_error(err);
+  } else {
+	  fprintf(stderr, "Successful test of timeout 0");
+  }
+
   if (err = adder.hidden_array(h1, h2, &hr1)) {
     print_error(err);
   } else {
