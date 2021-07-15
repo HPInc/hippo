@@ -80,6 +80,51 @@ class BlackAdder : public hippo::Adder {
     for (int i=15; i > 0; i--) {
       fprintf(stderr, "%s ** %d\n", __FUNCTION__, i);
       Sleep(1000);
+
+      // create a wchardata outside the switch statement
+      // to keep the compiler happy
+      hippo::wcharptr wchardata(9);
+
+      // create a notification every second
+      switch (i%7){
+        default:
+        case 0:
+          // no parameter
+          SendNotification("slow_call_noparam");
+          break;
+        case 1:
+          // int parameter
+          SendNotification("slow_call_int", i);
+          break;
+        case 2:
+          // example with float parameter
+          SendNotification("slow_call_float",(float)i);
+          break;
+        case 3:
+          // example with bool parameter
+          SendNotification("slow_call_bool",true);
+          break;
+        case 4:
+          // example with char* parameter
+          SendNotification("slow_call_charptr","tick");
+          break;
+        case 5:
+          // example with wcharptr parameter
+          memcpy(wchardata.data,L"你好=hello",wcslen(L"你好=hello")*sizeof(wchar_t));
+          SendNotification("slow_call_wcharptr", &wchardata);
+          break;
+        case 6:
+          // example with b64bytes parameter (in this case ascii string "012345")
+          hippo::b64bytes b64data(6);
+          for (int i = 0; i < b64data.len-1; i++) {
+            //48 is ASCII for "0", so this should create an array with ASCII "012345"
+            b64data.data[i] = 48+i;
+          }
+          // null terminate this string
+          b64data.data[b64data.len - 1] = 0;
+          SendNotification("slow_call_b64", &b64data);
+          break;
+      }
     }
     fprintf(stderr, "%s Finished\n", __FUNCTION__);
 
@@ -145,7 +190,7 @@ int RunBlackAdder() {
     print_error(err);
     goto clean_up;
   }
-  // and motify the caller
+  // and notify the caller
   lock.unlock();
   badder_condition.notify_all();
 
@@ -178,6 +223,51 @@ void printCameraKeystone(const hippo::CameraKeystoneX &ks) {
           ks.value.top_right.x, ks.value.top_right.y);
 }
 
+// notification function
+void swdevice_notification(const hippo::SWDeviceNotificationParam &param,
+                           void *data) {
+  fprintf(stderr, "**************************************\n");
+  fprintf(stderr, "Received Notification for method %s\n", param.methodName);
+  fprintf(stderr, "The notification data consists of:  ");
+
+  // each notification can pass back some data, and each notification might
+  // have different data.  In this example the BlackAdder server passes
+  // notifications named slow_call_<type>, so let's examine the method name
+  // to parse the correct type out of the param
+  if (strcmp(param.methodName, "on_slow_call_noparam") == 0) {
+    fprintf(stderr, "\t no parameter\n");
+  }
+  else if (strcmp(param.methodName, "on_slow_call_int") == 0) {
+    fprintf(stderr, "\t uint32: %i\n", param.uint32Data);
+  }
+  else if (strcmp(param.methodName, "on_slow_call_float") == 0) {
+    fprintf(stderr, "\t float: %f\n", param.floatData);
+  }
+  else if (strcmp(param.methodName, "on_slow_call_bool") == 0) {
+    fprintf(stderr, "\t bool: %s\n", param.boolData ? "true" : "false");
+  }
+  else if (strcmp(param.methodName, "on_slow_call_charptr") == 0) {
+    if (param.charData && strlen(param.charData) > 0) {
+      fprintf(stderr, "\t string: %s\n", param.charData);
+    }
+  }
+  else if (strcmp(param.methodName, "on_slow_call_wcharptr") == 0) {
+    if (param.wcharData.data && wcslen(param.wcharData.data) > 0) {
+      fprintf(stderr, "\t wchardata: %ws\n", param.wcharData.data);
+    }
+  }
+  else if (strcmp(param.methodName, "on_slow_call_b64") == 0) {
+    if (param.b64bytesData.len > 0) {
+      // in this example we expect an ascii string "012345" so cast the data as char*
+      fprintf(stderr, "B64bytes Data is %s\n", (char*)param.b64bytesData.data);
+    }
+  }
+  else {
+    fprintf(stderr, "Error - unknown notification received\n");
+  }
+  fprintf(stderr, "**************************************\n");
+}
+
 uint64_t TestSWDevice(void) {
   uint64_t err = 0LL;
   fprintf(stderr, "######################################\n");
@@ -195,7 +285,7 @@ uint64_t TestSWDevice(void) {
   }
   std::thread badder_th(RunBlackAdder);
 
-  // and wait for the SW device to start
+  // and wait for the SW device (server) to start
   int timeout = 1;
   if (std::cv_status::timeout ==
       badder_condition.wait_for(lock,
@@ -204,7 +294,14 @@ uint64_t TestSWDevice(void) {
     return MAKE_HIPPO_ERROR(hippo::HIPPO_SWDEVICE,
                             hippo::HIPPO_TIMEOUT);
   }
+
+  // now make the client
   hippo::Adder adder;
+
+  // and subscribe to notifications
+  uint32_t num_subscribed = 0;
+  adder.subscribe(&swdevice_notification, reinterpret_cast<void*>(&adder),
+                  &num_subscribed);
 
   // PointX from ./py/adder.json
   hippo::PointX p1, p2, pr;

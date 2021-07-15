@@ -49,6 +49,9 @@ HippoSwDevice::HippoSwDevice(const char *devName,
 }
 
 HippoSwDevice::~HippoSwDevice(void) {
+  if (HasRegisteredCallback()) {
+    unsubscribe();
+  }
   if (NULL != cmd_th_) {
     disconnect_device();
   }
@@ -233,7 +236,160 @@ uint64_t HippoSwDevice::ProcessCommand(const char *, void *, void *) {
   return 0LL;
 }
 
+// private function that does the actual sending of the notification
+uint64_t HippoSwDevice::SendNotification(const char *method,
+                                         const void *params) {
+  uint64_t err = HIPPO_OK;
+  try {
+    std::string device = devName_;
+    std::string devName = device.substr(0, device.find("@"));
+    std::string methodString = devName + ".on_" + method;
+
+    nl::json msg = { { "jsonrpc", "2.0" }, { "method", methodString } };
+    if (NULL !=
+      params && !reinterpret_cast<const nl::json*>(params)->empty()) {
+      msg["params"] = *(reinterpret_cast<const nl::json*>(params));
+    }
+    std::string msg_s = msg.dump();
+
+    unsigned char *jsonrpc =
+      reinterpret_cast<unsigned char*>(strdup(msg_s.c_str()));
+    // send notification
+    if (err = wsCmd_->SendRequest(
+      reinterpret_cast<unsigned char*>(jsonrpc),
+      WsConnectionType::TEXT)) {
+      // Who do we send error back to?
+    }
+  }
+  catch (nl::json::exception) {     // out_of_range or type_error
+    fprintf(stderr, "** Ooops! No 'method' in notification! '%s' \n",
+      "SendNotification() function");
+  }
+  return err;
+}
+
+uint64_t HippoSwDevice::subscribe(void(*callback)(
+                                        const SWDeviceNotificationParam &param,
+                                        void *data),
+                                  void *data) {
+  return subscribe(callback, data, NULL);
+}
+uint64_t HippoSwDevice::subscribe(void(*callback)(
+                                        const SWDeviceNotificationParam &param,
+                                        void *data),
+                                  void *data, uint32_t *get) {
+  uint64_t err = 0LL;
+
+  if (err = HippoDevice::subscribe_raw(data, get)) {
+    return err;
+  }
+  callback_ = callback;
+
+  return err;
+}
+
+uint64_t HippoSwDevice::unsubscribe() {
+  callback_ = NULL;
+  return HippoDevice::unsubscribe();
+}
+
+uint64_t HippoSwDevice::unsubscribe(uint32_t *get) {
+  callback_ = NULL;
+  return HippoDevice::unsubscribe(get);
+}
+
 // protected member functions
+
+// send notification with no parameter
+uint64_t HippoSwDevice::SendNotification(const char *notificationName) {
+  return SendNotification(notificationName, static_cast<void*>(nullptr));
+}
+
+// send notification with integer parameter
+uint64_t HippoSwDevice::SendNotification(const char *notificationName,
+                                         int32_t param) {
+  if (notificationName == nullptr) {
+    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
+  }
+  nl::json jparam;
+  uint64_t err = int32_t_c2json(param, &jparam);
+  if (err != HIPPO_OK) {
+    return err;
+  }
+  return SendNotification(notificationName, reinterpret_cast<void*>(&jparam));
+}
+
+// send notification with float param
+uint64_t HippoSwDevice::SendNotification(const char *notificationName,
+                                         float param) {
+  if (notificationName == nullptr) {
+    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
+  }
+  nl::json jparam;
+  uint64_t err = float_c2json(param, &jparam);
+  if (err != HIPPO_OK) {
+    return err;
+  }
+  return SendNotification(notificationName, reinterpret_cast<void*>(&jparam));
+}
+
+// send notification with bool param
+uint64_t HippoSwDevice::SendNotification(const char *notificationName,
+                                         bool param) {
+  if (notificationName == nullptr) {
+    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
+  }
+  nl::json jparam;
+  uint64_t err = bool_c2json(param, &jparam);
+  if (err != HIPPO_OK) {
+    return err;
+  }
+  return SendNotification(notificationName, reinterpret_cast<void*>(&jparam));
+}
+
+// send notification with char* param
+uint64_t HippoSwDevice::SendNotification(const char *notificationName,
+                                         char* param) {
+  if (notificationName == nullptr || param == nullptr) {
+    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
+  }
+
+  nl::json jparam = param;
+  if (!jparam.is_string()) {
+    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
+  }
+
+  return SendNotification(notificationName, reinterpret_cast<void*>(&jparam));
+}
+
+// send notification with wcharptr param
+uint64_t HippoSwDevice::SendNotification(const char *notificationName,
+                                         wcharptr* param) {
+  if (notificationName == nullptr || param->data == nullptr
+) {
+    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
+  }
+  nl::json jparam;
+  uint64_t err = wcharptr_c2json(*param, &jparam);
+  if (err != HIPPO_OK) {
+    return err;
+  }
+  return SendNotification(notificationName, reinterpret_cast<void*>(&jparam));
+}
+
+// send notification with b64bytes* param
+uint64_t HippoSwDevice::SendNotification(const char *notificationName,
+                                         b64bytes* param) {
+  if (notificationName == nullptr || param == nullptr) {
+    return MAKE_HIPPO_ERROR(HIPPO_SWDEVICE, HIPPO_INVALID_PARAM);
+  }
+  nl::json jparam;
+  uint64_t err = b64bytes_c2json(*param, &jparam);
+  if (err != HIPPO_OK) {
+    return err;
+  }
+  return SendNotification(notificationName, reinterpret_cast<void*>(&jparam));
+}
 
 uint64_t HippoSwDevice::int32_t_c2json(const int32_t &set, void *obj) {
   if (obj == NULL) {
@@ -397,6 +553,66 @@ uint64_t HippoSwDevice::b64bytes_json2c(const void *obj, b64bytes *get) {
   return HIPPO_OK;
 }
 
+bool HippoSwDevice::HasRegisteredCallback() {
+  return (NULL != callback_);
+}
+
+void HippoSwDevice::ProcessSignal(char *method, void *obj) {
+  // check to ensure that there is a callback
+  if (NULL == callback_) {
+    return;
+  }
+
+  // make the parameter
+  SWDeviceNotificationParam param;
+
+  // copy the method name over.  This mallocs data which
+  // gets freed in the SWDeviceNotificationParam destructor
+  if (strlen(method) > 0) {
+    size_t len = strlen(method);
+    param.methodName = reinterpret_cast<char*>(malloc(len+1));
+    memcpy(param.methodName, method, len);
+    param.methodName[len] = 0;
+  }
+
+  // now try to cast the json as the various types
+  nl::json v, *params = reinterpret_cast<nl::json*>(obj);
+  try {
+    v = params->at(0);
+    if (v.is_number_integer()) {
+      param.uint32Data = v.get<uint32_t>();
+    }
+    if (v.is_boolean()) {
+      param.boolData = v.get<bool>();
+    }
+    if (v.is_number_float()) {
+      param.floatData = v.get<float>();
+    }
+
+    if (v.is_string()) {
+      // copy over the char* interpretation of the parameter
+      // This mallocs data which gets freed in the
+      // SWDeviceNotificationParam destructor
+      std::string strDat = v.get<std::string>();
+      param.charData = reinterpret_cast<char*>(malloc(strDat.length() + 1));
+      memcpy(param.charData, strDat.c_str(), strDat.length());
+      param.charData[strDat.length()] = 0;
+
+      // convert the b64bytes interpretation
+      b64bytes_json2c(&v, &param.b64bytesData);
+
+      // convert the wcharptr interpretation
+      wcharptr_json2c(&v, &param.wcharData);
+    }
+  }
+  catch (nl::json::exception) {     // out_of_range or type_error
+                                    // do nothing
+  }
+
+  // now pass the data back to the callback
+  (*callback_)(param, callback_data_);
+}
+
 //
 // data types
 //
@@ -444,6 +660,26 @@ uint64_t b64bytes::resize(size_t size) {
     len = size;
   }
   return NULL == d;
+}
+
+// initialize the parameters
+SWDeviceNotificationParam::SWDeviceNotificationParam():
+  methodName(nullptr),
+  uint32Data(0),
+  floatData(0),
+  charData(0) {
+}
+
+// free any allocated data
+SWDeviceNotificationParam::~SWDeviceNotificationParam() {
+  if (methodName) {
+    free(methodName);
+    methodName = nullptr;
+  }
+  if (charData) {
+    free(charData);
+    charData = nullptr;
+  }
 }
 
 }    // namespace hippo

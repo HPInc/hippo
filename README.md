@@ -115,6 +115,88 @@ functions follow this approach when possible.
 value for the `projector.keystone` function, but we expose these functions
 for consistency with the rest of the API.
 
+### Software Devices
+
+Recent versions of `SoHal` allow specifically written pieces of software to
+register themselves on SoHal as a Software Device.  These devices inform
+`SoHal` as to which functions they implement, and allow a `SoHal` client
+to connect to the software device and call those functions.  Because the
+data is passed between SoHal and the software device via JSONRPC, the data
+must be serializable.  An example of a software device (adder) that
+implements a few sample functions can be found in the swdevices subfolder.
+The functions that the sample device implements is defined in the
+`adder.json` file within that subfolder.  Function parameters that can be
+modeled as c-style structs can also be passed between a software device
+client and server by defining the data type as a json schema.
+Examples of these schemas can be found in the `swdevices\schemas` subfolder.
+
+A complete example `adder` software device is located in the `swdevices`
+subfolder.  To compile the adder software device, first compile the hippo
+library by opening & compiling the `win\hippo.sln` project.  Then open a
+console window and cd to the `swdevices` subfolder and type:
+
+
+```
+python gen_cpp.py --json adder.json --schemas schemas
+```
+
+This will run a python script that creates two files:
+
+1. `swdevices\src\adder.cc`
+2. `swdevices\include\adder.h`
+
+After these two files are created, open the `swdevces\hippo_swdevices.sln"
+solution and compile both the client and server projects.  This will create
+a software device server that can connect to and register itelf with SoHal,
+and a client that will call into the server to perform various tasks.
+
+To use the software device the user should perform the following steps in order:
+
+1.  Launch `SoHal`
+2.  Launch the compiled `swdevices_server.exe`
+3.  Launch the compiled `swdevices_client.exe`
+
+A more complete client/server `adder` software device can be found in the
+`test\test_swdevice.cc` file.  In this case a `Blackadder` server class registers
+on `SoHal` and an `adder` client connects to the `Blackadder` server to call even
+more functions than the example shown in the `swdevices` subfolder.
+
+### Notifications
+
+`hiPPo` now allows Software Device servers to send notifications to clients.
+In order to do so, the software device server can call the `SendNotification`
+function.  Currently the notification sends a notification name, and an
+optional parameter as part of the notification. The data types that the
+parameter can contain is limited to the following types:
+
+1. `int`
+2. `float`
+3. `bool`
+4. `c-style strings` passed in via null terminated char*
+5. `wcharptr` type
+6. `b64bytes` type
+7. no parameter
+
+Internally, the server will add an `<SoftwareDeviceName>.on_` to the notification
+name, i.e. calling
+
+`SendNotification("slow_call","tick")`
+
+from an `adder` software device server will result in the client receiving a
+notification
+
+`adder.on_slow_call` with a `SWDeviceNotificationParam` parameter that contains
+`tick` in the charData field.
+
+In order for the software device client to receive notifications it must be
+subscribed to the notifications.  This can be achieved via a call to `subscribe`.
+The client must know the type of parameter for each notification, as a
+`SWDeviceNotificationParam` will load as many of its fields with the parameter
+data as is possible.
+
+An example of the `Blackadder` software device server sending notifications
+every 1 second to the client can be found in the `test\test_swdevice.cc` file.
+
 
 ### No exceptions thrown
 
