@@ -42,6 +42,36 @@ class DLLEXPORT b64bytes {
   uint64_t resize(size_t len);
 };
 
+class DLLEXPORT SWDeviceNotificationParam {
+ public:
+  SWDeviceNotificationParam();
+  ~SWDeviceNotificationParam();
+
+  // the name of the notification (up to 128 chars)
+  char *methodName;
+
+  // The various types of data that the parameter could be
+  // Note: if the JSON library indicates that the
+  // parameter is not valid then that particular field is not filled
+
+  // the data as a uint32 type
+  uint32_t uint32Data;
+
+  // the data as a float type
+  float floatData;
+
+  // the data as boolean type
+  bool boolData;
+
+  // the data as a char type
+  char* charData;
+
+  // the data as a wcharptr type
+  wcharptr wcharData;
+
+  // the data as a b64bytes type
+  b64bytes b64bytesData;
+};
 
 class DLLEXPORT HippoSwDevice : public HippoDevice {
  public:
@@ -58,12 +88,38 @@ class DLLEXPORT HippoSwDevice : public HippoDevice {
 
   uint64_t disconnect_device(void);
 
+  // subscribe to notifications
+  uint64_t subscribe(void(*callback)(const SWDeviceNotificationParam &param,
+                                     void *data),
+                     void *data);
+  uint64_t subscribe(void(*callback)(const SWDeviceNotificationParam &param,
+                                     void *data),
+                     void *data, uint32_t *get);
+
+  // unsubscribe from notifications
+  uint64_t unsubscribe();
+  uint64_t unsubscribe(uint32_t *get);
+
  protected:
   uint64_t connect_device(const char *json);
 
   void WaitForCommand(void);
   virtual uint64_t ProcessCommand(const char *method, void *params,
                                   void *result);
+
+  uint64_t SendNotification(const char *notificationName);
+  uint64_t SendNotification(const char *notificationName,
+                            int32_t param);
+  uint64_t SendNotification(const char *notificationName,
+                            float param);
+  uint64_t SendNotification(const char *notificationName,
+                            bool param);
+  uint64_t SendNotification(const char *notificationName,
+                            char* param);
+  uint64_t SendNotification(const char *notificationName,
+                            wcharptr* param);
+  uint64_t SendNotification(const char *notificationName,
+                            b64bytes* param);
 
   uint64_t int32_t_c2json(const int32_t &set, void *obj);
   uint64_t int32_t_json2c(const void *obj, int32_t *get);
@@ -76,6 +132,18 @@ class DLLEXPORT HippoSwDevice : public HippoDevice {
   uint64_t wcharptr_json2c(const void *obj, wcharptr *get);
   uint64_t b64bytes_c2json(const b64bytes &set, void *obj);
   uint64_t b64bytes_json2c(const void *obj, b64bytes *get);
+
+  // Callback items
+  void ProcessSignal(char *method, void *obj) override;
+  bool HasRegisteredCallback();
+
+  void(*callback_)(const SWDeviceNotificationParam &param, void *data);
+
+
+ private:
+  // private function that actually sends notifications
+  // this is called by the protected functions that take specific types in
+  uint64_t SendNotification(const char *method, const void *param);
 
  private:
   HippoWS *wsCmd_;
